@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -8,6 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, Eye, EyeOff } from 'lucide-react';
+import api from '@/lib/api';
+
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -15,11 +20,9 @@ const loginSchema = z.object({
 });
 
 const signupSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string()
-}).refine((data) => data.password === data.confirmPassword, {
+}).refine((data) => data.password, {
   message: "Passwords don't match",
   path: ["confirmPassword"]
 });
@@ -29,13 +32,13 @@ type SignupData = z.infer<typeof signupSchema>;
 
 interface AuthFormProps {
   type: 'login' | 'signup';
-  onSubmit: (data: LoginData | SignupData) => Promise<void>;
-  isLoading: boolean;
 }
 
-export function AuthForm({ type, onSubmit, isLoading }: AuthFormProps) {
+export function AuthForm({ type }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const { login } = useAuth();
+  const router = useRouter();
   
   const schema = type === 'login' ? loginSchema : signupSchema;
   
@@ -47,28 +50,27 @@ export function AuthForm({ type, onSubmit, isLoading }: AuthFormProps) {
     resolver: zodResolver(schema)
   });
 
+  const onSubmit = async (data: LoginData | SignupData) => {
+    setIsLoading(true);
+    try {
+      if (type === 'signup') {
+        await api.post('/users/', data);
+        alert('Signup successful! Please log in.');
+        router.push('/login');
+      } else {
+        const response = await api.post('/token', data);
+        login(response.data.access_token);
+        router.push('/');
+      }
+    } catch (error) {
+      alert('An error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {type === 'signup' && (
-        <div className="space-y-2">
-          <Label htmlFor="name">Full Name</Label>
-          <Input
-            id="name"
-            type="text"
-            placeholder="Enter your full name"
-            disabled={isLoading}
-            {...register('name')}
-            className={errors.name ? 'border-red-500 focus:border-red-500' : ''}
-          />
-          {errors.name && (
-            <div className="flex items-center gap-2 text-red-600 text-sm">
-              <AlertCircle className="h-4 w-4" />
-              {errors.name.message}
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -120,42 +122,6 @@ export function AuthForm({ type, onSubmit, isLoading }: AuthFormProps) {
           </div>
         )}
       </div>
-
-      {type === 'signup' && (
-        <div className="space-y-2">
-          <Label htmlFor="confirmPassword">Confirm Password</Label>
-          <div className="relative">
-            <Input
-              id="confirmPassword"
-              type={showConfirmPassword ? 'text' : 'password'}
-              placeholder="Confirm your password"
-              disabled={isLoading}
-              {...register('confirmPassword')}
-              className={errors.confirmPassword ? 'border-red-500 focus:border-red-500 pr-10' : 'pr-10'}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              disabled={isLoading}
-            >
-              {showConfirmPassword ? (
-                <EyeOff className="h-4 w-4 text-gray-400" />
-              ) : (
-                <Eye className="h-4 w-4 text-gray-400" />
-              )}
-            </Button>
-          </div>
-          {errors.confirmPassword && (
-            <div className="flex items-center gap-2 text-red-600 text-sm">
-              <AlertCircle className="h-4 w-4" />
-              {errors.confirmPassword.message}
-            </div>
-          )}
-        </div>
-      )}
 
       <Button
         type="submit"

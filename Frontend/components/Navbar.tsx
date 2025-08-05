@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Menu, X, Calculator } from 'lucide-react';
 
+import { useAuth } from '@/hooks/useAuth';
+
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, logout } = useAuth();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200">
@@ -26,14 +29,23 @@ export function Navbar() {
             <Link href="/gallery" className="text-gray-700 hover:text-blue-600 transition-colors font-medium">
               Gallery
             </Link>
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" asChild className="text-gray-700 hover:text-blue-600">
-                <Link href="/login">Login</Link>
-              </Button>
-              <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white">
-                <Link href="/signup">Sign Up</Link>
-              </Button>
-            </div>
+            {user ? (
+              <div className="flex items-center gap-3">
+                <span className="text-gray-700 font-medium">{user.email}</span>
+                <Button variant="ghost" onClick={logout} className="text-gray-700 hover:text-blue-600">
+                  Logout
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" asChild className="text-gray-700 hover:text-blue-600">
+                  <Link href="/login">Login</Link>
+                </Button>
+                <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white">
+                  <Link href="/signup">Sign Up</Link>
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -65,14 +77,23 @@ export function Navbar() {
               >
                 Gallery
               </Link>
-              <div className="pt-2 space-y-2">
-                <Button variant="ghost" asChild className="w-full justify-start text-gray-700 hover:text-blue-600">
-                  <Link href="/login" onClick={() => setIsMenuOpen(false)}>Login</Link>
-                </Button>
-                <Button asChild className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                  <Link href="/signup" onClick={() => setIsMenuOpen(false)}>Sign Up</Link>
-                </Button>
-              </div>
+              {user ? (
+                <div className="pt-2 space-y-2">
+                  <span className="block px-3 py-2 text-gray-700 font-medium">{user.email}</span>
+                  <Button variant="ghost" onClick={() => { logout(); setIsMenuOpen(false); }} className="w-full justify-start text-gray-700 hover:text-blue-600">
+                    Logout
+                  </Button>
+                </div>
+              ) : (
+                <div className="pt-2 space-y-2">
+                  <Button variant="ghost" asChild className="w-full justify-start text-gray-700 hover:text-blue-600">
+                    <Link href="/login" onClick={() => setIsMenuOpen(false)}>Login</Link>
+                  </Button>
+                  <Button asChild className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                    <Link href="/signup" onClick={() => setIsMenuOpen(false)}>Sign Up</Link>
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}

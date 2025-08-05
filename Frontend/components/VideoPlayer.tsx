@@ -20,17 +20,21 @@ interface VideoPlayerProps {
   isRegenerating: boolean;
 }
 
-export function VideoPlayer({ videoResult, onNewQuery, onRegenerate, isRegenerating }: VideoPlayerProps) {
+export function VideoPlayer({
+  videoResult,
+  onNewQuery,
+  onRegenerate,
+  isRegenerating,
+}: VideoPlayerProps) {
   const [isMuted, setIsMuted] = useState(false);
 
   return (
     <div className="animate-fade-in">
       <Card className="shadow-2xl border-0 bg-white/95 backdrop-blur-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl text-gray-900">
-            {videoResult.title}
-          </CardTitle>
+          <CardTitle className="text-2xl text-gray-900">{videoResult.title}</CardTitle>
           <div className="flex justify-center gap-4 mt-4">
+            {/* Regenerate button */}
             <Button
               onClick={onRegenerate}
               disabled={isRegenerating}
@@ -49,6 +53,8 @@ export function VideoPlayer({ videoResult, onNewQuery, onRegenerate, isRegenerat
                 </>
               )}
             </Button>
+
+            {/* New Query button */}
             <Button
               onClick={onNewQuery}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
@@ -58,22 +64,23 @@ export function VideoPlayer({ videoResult, onNewQuery, onRegenerate, isRegenerat
             </Button>
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="grid lg:grid-cols-3 gap-6">
-            {/* Video Player */}
+            {/* Video Section */}
             <div className="lg:col-span-2">
               <div className="video-container bg-black rounded-xl overflow-hidden shadow-lg">
                 <video
                   controls
                   muted={isMuted}
                   className="w-full h-full object-cover"
-                  poster="https://images.pexels.com/photos/3729557/pexels-photo-3729557.jpeg?auto=compress&cs=tinysrgb&w=800"
+                  
                 >
                   <source src={videoResult.videoUrl} type="video/mp4" />
                   Your browser does not support the video tag.
                 </video>
               </div>
-              
+
               {/* Video Controls */}
               <div className="flex items-center justify-between mt-4 p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-2">
@@ -87,13 +94,11 @@ export function VideoPlayer({ videoResult, onNewQuery, onRegenerate, isRegenerat
                     {isMuted ? 'Unmute' : 'Mute'}
                   </Button>
                 </div>
-                <div className="text-sm text-gray-500">
-                  Generated with AI
-                </div>
+                <div className="text-sm text-gray-500">Generated with AI</div>
               </div>
             </div>
 
-            {/* Transcript */}
+            {/* Transcript Section */}
             <div className="lg:col-span-1">
               <Tabs defaultValue="transcript" className="w-full">
                 <TabsList className="grid w-full grid-cols-1">
@@ -107,11 +112,13 @@ export function VideoPlayer({ videoResult, onNewQuery, onRegenerate, isRegenerat
                     <CardContent>
                       <ScrollArea className="h-80">
                         <div className="text-sm text-gray-700 leading-relaxed space-y-3">
-                          {videoResult.transcript.split('\n').map((paragraph, index) => (
-                            <p key={index} className="text-justify">
-                              {paragraph}
-                            </p>
-                          ))}
+                          {videoResult.transcript
+                            ? videoResult.transcript.split('\n').map((paragraph, index) => (
+                                <p key={index} className="text-justify">
+                                  {paragraph}
+                                </p>
+                              ))
+                            : 'No transcript available.'}
                         </div>
                       </ScrollArea>
                     </CardContent>

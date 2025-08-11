@@ -7,11 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import google.generativeai as genai
+from elevenlabs.client import ElevenLabs
+from elevenlabs import save
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # ====== CONFIGURE GEMINI ======
-GEMINI_API_KEY = "" # Replace with your valid key
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key="")
+
 model = genai.GenerativeModel("gemini-2.5-pro")
+
+# ====== CONFIGURE ELEVENLABS ======
+
 
 # ====== FASTAPI APP SETUP ======
 app = FastAPI()
@@ -24,88 +32,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure videos folder exists & serve
+# Ensure media folders exist & serve
 os.makedirs("videos", exist_ok=True)
 app.mount("/videos", StaticFiles(directory="videos"), name="videos")
-
-# ====== HARD-CODED VIDEO MAP ======
-HARDCODED_VIDEOS = {
-    "pythagoras theorem": {
-        "videoUrl": "http://localhost:8000/videos/pythagoras.mp4",
-        "transcript": "This video demonstrates Pythagoras Theorem step by step with clear visuals and aligned elements.",
-        "title": "Explaining Pythagoras Theorem"
-    }
-}
+os.makedirs("audio", exist_ok=True)
+app.mount("/audio", StaticFiles(directory="audio"), name="audio")
 
 # ====== REQUEST SCHEMA ======
 class PromptRequest(BaseModel):
     prompt: str
 
-# ====== TOPIC-WISE PROMPT BANK ======
-TOPIC_PROMPTS = {
-    "pythagoras": """
-Create a *Manim Community Edition* script (Python) that visually explains the **Pythagorean Theorem**.
-Ensure the triangle is right-angled, sides a² + b² = c² are highlighted, and include verification with area squares.
-Follow these phases:
-- Intro with title
-- Construct triangle and squares
-- Show relationship step-by-step
-- Verify and conclude
-
-Final format: Python code only, class name should be `GeneratedScene`. Narration must follow:
----EXPLANATION_STARTS_HERE---
-Narration goes here...
-""",
-    "system of equations": """
-Create a *Manim Community Edition* script (Python) that demonstrates solving a **System of Linear Equations** graphically.
-Plot two equations with different slopes, show intersection point, and narrate steps clearly.
-Animation flow:
-- Title and introduction
-- Plot lines from equations
-- Highlight intersection point
-- Explain meaning visually
-
-Final format: Python code only, class name should be `GeneratedScene`. Narration must follow:
----EXPLANATION_STARTS_HERE---
-Narration goes here...
-"""
-}
-kj="""Generate a Manim animation script that visually explains the given mathematical problem step by step.
-                    The animation should include text explanations, dynamic equation transformations, relevant geometrical 
-                    or graphical representations (if applicable), and smooth transitions using animations like FadeIn, Transform, 
-                    and DrawBorderThenFill. Ensure the animations maintain engagement and clarity. Align the animation in proper manner
-                    and one important main thing is I only want the code alone not any strings another than the code because the manim script give syntactical error so give only code alone compulsorily and also exclude (```python and ''') in the script.
-                    One important main thing is you have to import all the necessary packages and make sure no runtime error or no inclusion of not imported variable if using then import the package and use.
-
-                    Additional requirements:
-                    1. Use consistent color coding: blue for variables, green for final answers, red for important transformations
-                    2. Add wait() commands between key steps with appropriate timing (0.5-2 seconds) for better pacing
-                    3. Group related mathematical operations using VGroups for cleaner animations
-                    4. Use proper self references for all scene elements and camera operations
-                    5. Add progress_bar=True to animations that benefit from showing progression
-                    6. Ensure all text is properly positioned with appropriate font size (MathTex(...).scale(0.8))
-                    7. Include self.wait(3) at the end of the animation
-                    8. Use TracedPath for any graphical representations that involve motion
-                    9. Set background color with config.background_color = "#1f1f1f" at the class definition level
-
-                    Topic-specific animation techniques (3Blue1Brown style):
-                    - For trigonometry: Use the UnitCircle class with animated angles, include DashedLine for projections, and animate sine/cosine waves growing from the circle
-                    - For calculus: Use NumberPlane with animated slopes/tangent lines that change color based on values, zoom in progressively to show limits, and use area filling animations for integrals
-                    - For algebra: Transform equations with color highlighting for each step, use coordinate shifts to show operations, and grow/shrink terms during simplification
-                    - For geometry: Use opacity changes to reveal cross-sections, include dotted construction lines, and animate 3D objects rotating to show different perspectives
-                    - For statistics: Create animated histograms that transform into probability curves, use color gradients to show probability regions, and animate individual data points
-                    - For vectors: Show arrows in coordinate systems that transform/combine with smooth animations, use shadowing for projections
-                    - For series: Create animated stacking of terms, use color gradients to show convergence/divergence, and include partial sum tracking
-                    - For logarithms: Use area stretching/compressing to visualize log properties, animate exponential growth with highlighting
-                    - For complex numbers: Use the ComplexPlane class with transformations, animate mapping between rectangular and polar forms with rotating vectors
-
-                    Remember, provide ONLY executable code with NO explanatory text or markdown formatting.
-                    : [algebra]
-"""
+class AudioRequest(BaseModel):
+    text: str
 
 # ====== DEFAULT GEMINI PROMPT BUILDER ======
 def build_gemini_prompt(topic: str) -> str:
-    return f"""You are an EXPERT MANIM COMMUNITY ANIMATOR. Generate ZERO-ERROR animations using ONLY verified Manim Community Edition syntax. Every line must execute perfectly without compilation errors.
+    return f"""
+You are an EXPERT MANIM COMMUNITY ANIMATOR. Generate ZERO-ERROR animations using ONLY verified Manim Community Edition syntax. Every line must execute perfectly without compilation errors.
 
 Topic : {topic}
 
@@ -128,92 +71,94 @@ Topic : {topic}
 ## ✅ MANDATORY REQUIREMENTS
 
 ### *1. IMPORTS - ONLY THIS:*
-python
+```python
 from manim import *
 import numpy as np  # Only if needed for calculations
-
+```
 
 ### *2. VERIFIED BASIC SHAPES ONLY:*
-python
+```python
 # USE THESE BUILT-IN SHAPES ONLY:
-Circle()
-Square() 
-Rectangle()
-Triangle()
-Line()
-Arrow()
-Dot()
-Polygon([points])  # For custom shapes
+# Circle()
+# Square() 
+# Rectangle()
+# Triangle()
+# Line()
+# Arrow()
+# Dot()
+# Polygon([points])  # For custom shapes
 
 # NEVER create custom VMobject classes unless absolutely necessary
 # ALWAYS use np.array() for coordinate calculations
-
+```
 
 ### *3. POSITION SYSTEM - SAFE COORDINATES:*
-python
+```python
 # SCREEN BOUNDARIES (NEVER EXCEED):
-MAX_X = 5.5    # Left/Right limit (safe zone)
-MAX_Y = 2.8    # Up/Down limit (safe zone)
+# MAX_X = 5.5    # Left/Right limit (safe zone)
+# MAX_Y = 2.8    # Up/Down limit (safe zone)
 
 # COORDINATE CALCULATIONS - ALWAYS USE np.array():
-A = np.array([0, 0, 0])              # Origin point
-B = np.array([2, 1, 0])              # Example point
-C = A + 0.5 * (B - A)                # Correct vector math
+# A = np.array([0, 0, 0])              # Origin point
+# B = np.array([2, 1, 0])              # Example point
+# C = A + 0.5 * (B - A)                # Correct vector math
 
 # SAFE POSITIONING METHODS:
-obj.move_to(ORIGIN)                    # Center
-obj.to_edge(UP, buff=0.8)             # Top edge with buffer
-obj.to_edge(DOWN, buff=0.8)           # Bottom edge with buffer  
-obj.to_edge(LEFT, buff=0.8)           # Left edge with buffer
-obj.to_edge(RIGHT, buff=0.8)          # Right edge with buffer
-obj.next_to(other_obj, UP, buff=0.4)  # Relative positioning
-obj.shift(UP * 1.5)                   # Relative movement (within bounds)
+# obj.move_to(ORIGIN)                    # Center
+# obj.to_edge(UP, buff=0.8)             # Top edge with buffer
+# obj.to_edge(DOWN, buff=0.8)           # Bottom edge with buffer  
+# obj.to_edge(LEFT, buff=0.8)           # Left edge with buffer
+# obj.to_edge(RIGHT, buff=0.8)          # Right edge with buffer
+# obj.next_to(other_obj, UP, buff=0.4)  # Relative positioning
+# obj.shift(UP * 1.5)                   # Relative movement (within bounds)
 
 # PREVENT OVERLAPPING:
-obj1.move_to(LEFT * 2)               # Left position
-obj2.move_to(RIGHT * 2)              # Right position (no overlap)
-obj3.move_to(UP * 1.5)               # Top position
-obj4.move_to(DOWN * 1.5)             # Bottom position
-
+# obj1.move_to(LEFT * 2)               # Left position
+# obj2.move_to(RIGHT * 2)              # Right position (no overlap)
+# obj3.move_to(UP * 1.5)               # Top position
+# obj4.move_to(DOWN * 1.5)             # Bottom position
+```
 
 ### *4. TEXT AND MATH - SIMPLE ONLY:*
-python
+```python
 # TEXT (ALWAYS WORKS):
-title = Text("Title Here", font_size=48)
-subtitle = Text("Subtitle", font_size=32)
+# title = Text("Title Here", font_size=48)
+# subtitle = Text("Subtitle", font_size=32)
 
 # MATH - SIMPLE EXPRESSIONS ONLY:
-equation = MathTex(r"x^2 + y^2 = r^2")
-formula = MathTex(r"f(x) = 2x + 1")
+# equation = MathTex(r"x^2 + y^2 = r^2")
+# formula = MathTex(r"f(x) = 2x + 1")
 
 # AVOID: Complex LaTeX, special symbols, or advanced formatting
-
+```
 
 ### *5. COLORS - BUILT-IN ONLY:*
-python
+```python
 # USE THESE COLORS ONLY:
-RED, BLUE, GREEN, YELLOW, ORANGE, PURPLE, PINK
-WHITE, BLACK, GRAY, LIGHT_GRAY, DARK_GRAY
-
+# RED, BLUE, GREEN, YELLOW, ORANGE, PURPLE, PINK
+# WHITE, BLACK, GRAY, LIGHT_GRAY, DARK_GRAY
+```
 
 ### *6. AXES AND GRAPHS - VERIFIED TEMPLATE:*
-python
+```python
 # SAFE AXES CONFIGURATION:
-axes = Axes(
-    x_range=[-4, 4, 1],
-    y_range=[-3, 3, 1],
-    x_length=8,
-    y_length=6,
-    tips=False  # Avoid tip issues
-)
+# axes = Axes(
+#     x_range=[-4, 4, 1],
+#     y_range=[-3, 3, 1],
+#     x_length=8,
+#     y_length=6,
+#     tips=False  # Avoid tip issues
+# )
 
 # SIMPLE FUNCTION PLOTTING:
-curve = axes.plot(lambda x: x**2, x_range=[-2, 2], color=BLUE)
+# curve = axes.plot(lambda x: x**2, x_range=[-2, 2], color=BLUE)
 
+#Mandatory alignment : Always center and doesnot goes out of layout (text, shapes, other things) focus on center alignment without overlapping and the value should be relative to the topics dont be hardcoded.
+```
 
 ## 🏗 MANDATORY SCENE STRUCTURE
 
-python
+```python
 from manim import *
 
 class ConceptAnimation(Scene):
@@ -251,146 +196,72 @@ class ConceptAnimation(Scene):
         conclusion = Text("Conclusion", font_size=36, color=GREEN)
         conclusion.move_to(ORIGIN)
         self.play(Write(conclusion), run_time=1.5)
-
+```
 
 ## 🔧 ERROR PREVENTION RULES
 
 ### *Rule 1: Method Verification*
-python
+```python
 # CORRECT: Always provide required parameters
-corner = square.get_corner(UP + RIGHT)  # Direction required
+# corner = square.get_corner(UP + RIGHT)  # Direction required
 
 # WRONG: Missing parameters
-corner = square.get_corner()  # Will cause error
-
+# corner = square.get_corner()  # Will cause error
+```
 
 ### *Rule 2: VGroup for VMobjects Only*
-python
+```python
 # CORRECT: Only VMobjects in VGroup
-shapes = VGroup(circle, square, triangle)  # All VMobjects
-self.play(Create(shapes), run_time=2)
+# shapes = VGroup(circle, square, triangle)  # All VMobjects
+# self.play(Create(shapes), run_time=2)
 
 # CORRECT: Mixed types - use Group instead
-from manim import Group
-mixed_objects = Group(*self.mobjects)  # For mixed Mobject types
-self.play(FadeOut(mixed_objects), run_time=1)
+# from manim import Group
+# mixed_objects = Group(*self.mobjects)  # For mixed Mobject types
+# self.play(FadeOut(mixed_objects), run_time=1)
 
 # WRONG: Mixing VMobject and Mobject in VGroup
-objects = VGroup(*self.mobjects)  # May cause TypeError
-
+# objects = VGroup(*self.mobjects)  # May cause TypeError
+```
 
 ### *Rule 3: Simple Animations Only*
-python
+```python
 # SAFE ANIMATIONS:
-self.play(Create(obj), run_time=2)
-self.play(Write(text), run_time=1.5)
-self.play(Transform(obj1, obj2), run_time=2)
-self.play(FadeIn(obj), run_time=1)
-self.play(FadeOut(obj), run_time=1)
-self.play(obj.animate.shift(UP), run_time=1)
+# self.play(Create(obj), run_time=2)
+# self.play(Write(text), run_time=1.5)
+# self.play(Transform(obj1, obj2), run_time=2)
+# self.play(FadeIn(obj), run_time=1)
+# self.play(FadeOut(obj), run_time=1)
+# self.play(obj.animate.shift(UP), run_time=1)
 
 # AVOID: Complex custom animations
-
+```
 
 ### *Rule 4: Screen Layout Management*
-python
+```python
 # TITLE AREA (Top 15% of screen):
-title.to_edge(UP, buff=0.8)           # Safe title position
+# title.to_edge(UP, buff=0.8)           # Safe title position
 
 # MAIN CONTENT AREA (Middle 70% of screen):
-content.move_to(ORIGIN)               # Center for main content
-left_content.move_to(LEFT * 3)        # Left side content
-right_content.move_to(RIGHT * 3)      # Right side content
+# content.move_to(ORIGIN)               # Center for main content
+# left_content.move_to(LEFT * 3)        # Left side content
+# right_content.move_to(RIGHT * 3)      # Right side content
 
 # FOOTER AREA (Bottom 15% of screen):
-footer.to_edge(DOWN, buff=0.8)        # Safe footer position
+# footer.to_edge(DOWN, buff=0.8)        # Safe footer position
 
 # PREVENT OVERLAPPING - Minimum spacing:
-MIN_SPACING = 0.5                     # Minimum distance between objects
-obj2.next_to(obj1, RIGHT, buff=MIN_SPACING)
+# MIN_SPACING = 0.5                     # Minimum distance between objects
+# obj2.next_to(obj1, RIGHT, buff=MIN_SPACING)
 
 # GRID LAYOUT for multiple objects:
-objects = [obj1, obj2, obj3, obj4]
-positions = [LEFT*2 + UP, RIGHT*2 + UP, LEFT*2 + DOWN, RIGHT*2 + DOWN]
-for obj, pos in zip(objects, positions):
-    obj.move_to(pos)
-
+# objects = [obj1, obj2, obj3, obj4]
+# positions = [LEFT*2 + UP, RIGHT*2 + UP, LEFT*2 + DOWN, RIGHT*2 + DOWN]
+# for obj, pos in zip(objects, positions):
+#     obj.move_to(pos)
+```
 
 ## 📝 VERIFIED TEMPLATES
-
-### *Template 1: Simple Geometric Demo*
-python
-from manim import *
-
-class GeometryDemo(Scene):
-    def construct(self):
-        # Title
-        title = Text("Geometry Basics", font_size=48, color=BLUE)
-        title.to_edge(UP, buff=0.8)
-        self.play(Write(title), run_time=2)
-        self.wait(1)
-        
-        # Create shapes
-        circle = Circle(radius=1, color=RED)
-        circle.move_to(LEFT * 3)
-        
-        square = Square(side_length=2, color=GREEN)
-        square.move_to(ORIGIN)
-        
-        triangle = Triangle(color=YELLOW)
-        triangle.move_to(RIGHT * 3)
-        
-        # Animate creation
-        shapes = VGroup(circle, square, triangle)
-        self.play(Create(shapes), run_time=3)
-        self.wait(2)
-        
-        # Clean exit
-        self.play(FadeOut(VGroup(*self.mobjects)), run_time=1)
-        self.wait(1)
-
-
-### *Template 2: Mathematical Function*
-python
-from manim import *
-
-class FunctionPlot(Scene):
-    def construct(self):
-        # Title
-        title = Text("Function: f(x) = x²", font_size=48, color=BLUE)
-        title.to_edge(UP, buff=0.8)
-        self.play(Write(title), run_time=2)
-        self.wait(1)
-        
-        # Create axes
-        axes = Axes(
-            x_range=[-3, 3, 1],
-            y_range=[0, 6, 1],
-            x_length=8,
-            y_length=5,
-            tips=False
-        )
-        axes.move_to(ORIGIN)
-        
-        # Create function
-        parabola = axes.plot(lambda x: x**2, x_range=[-2.5, 2.5], color=RED)
-        
-        # Labels
-        x_label = axes.get_x_axis_label("x")
-        y_label = axes.get_y_axis_label("y")
-        
-        # Animate
-        self.play(Create(axes), run_time=2)
-        self.play(Write(x_label), Write(y_label), run_time=1)
-        self.wait(0.5)
-        self.play(Create(parabola), run_time=3)
-        self.wait(2)
-        
-        # Clean exit
-        self.play(FadeOut(VGroup(*self.mobjects)), run_time=1)
-        self.wait(1)     : {topic}
-
-
 """
 
 # ====== CLEAN GEMINI OUTPUT ======
@@ -419,67 +290,368 @@ def clean_manim_code(manim_code: str) -> str:
         )
 
     return manim_code
+def build_alignment_prompt(manim_code: str) -> str:
+    return f"""
+You are a MANIM COMMUNITY ALIGNMENT SPECIALIST - An expert code debugger focused exclusively on fixing positioning, spacing, and overlap issues in Manim Community scripts.
 
-# ====== HYBRID VIDEO GENERATION ENDPOINT ======
+**YOUR MISSION:**
+Analyze the provided Manim Community script and fix ALL alignment problems while preserving the original animation logic and educational content.
+
+**ALIGNMENT PROBLEMS TO DETECT & FIX:**
+
+1. **OVERLAPPING ELEMENTS:**
+   - Text overlapping with other text
+   - Objects overlapping with axes/grids
+   - Labels covering important visual elements
+   - Mathematical expressions overlapping boundaries
+
+2. **SCREEN BOUNDARY VIOLATIONS:**
+   - Elements extending beyond visible screen area
+   - Text cut off at screen edges
+   - Objects positioned outside safe zones
+   - Coordinate system exceeding display limits
+
+3. **SPACING INCONSISTENCIES:**
+   - Inconsistent buffer distances between elements
+   - Poor vertical/horizontal spacing patterns
+   - Elements too close for readability
+   - Uneven distribution of screen space
+
+4. **POSITIONING ERRORS:**
+   - Incorrect use of .to_edge(), .next_to(), .move_to()
+   - Missing or incorrect buff parameters
+   - Wrong directional constants (UP, DOWN, LEFT, RIGHT)
+   - Improper center positioning
+
+**FIXING METHODOLOGY:**
+
+**STEP 1: SCREEN BOUNDARY ANALYSIS**
+```python
+# DEFINE SAFE ZONES (DO NOT EXCEED THESE LIMITS)
+SCREEN_WIDTH = 14.2    # Total usable width
+SCREEN_HEIGHT = 8.0    # Total usable height
+SAFE_LEFT = LEFT * 6.5   # Safe left boundary  
+SAFE_RIGHT = RIGHT * 6.5 # Safe right boundary
+SAFE_UP = UP * 3.5      # Safe top boundary
+SAFE_DOWN = DOWN * 3.5  # Safe bottom boundary
+TITLE_ZONE = UP * 3.2   # Reserved for titles
+FOOTER_ZONE = DOWN * 3.2 # Reserved for footers
+CENTER_ZONE = ORIGIN    # Safe center area
+STEP 2: ELEMENT POSITIONING CORRECTION
+python# CORRECTED POSITIONING PATTERNS
+# Replace problematic positioning with these tested patterns:
+
+# TITLES - Always safe at top
+title.to_edge(UP, buff=0.5)
+
+# SUBTITLES - Proper spacing from title  
+subtitle.next_to(title, DOWN, buff=0.3)
+
+# MAIN CONTENT - Center positioning
+content.move_to(ORIGIN)
+
+# SIDE LABELS - Safe edge positioning
+left_label.to_edge(LEFT, buff=0.8)
+right_label.to_edge(RIGHT, buff=0.8)
+
+# EQUATIONS - Vertical stacking with proper spacing
+eq1.move_to(UP * 2)
+eq2.next_to(eq1, DOWN, buff=0.5)
+eq3.next_to(eq2, DOWN, buff=0.5)
+
+# COORDINATE SYSTEMS - Screen-safe dimensions
+axes = Axes(
+    x_range=[-4, 4, 1],    # Safe range
+    y_range=[-3, 3, 1],    # Safe range  
+    x_length=8,            # Safe width
+    y_length=6,            # Safe height
+)
+STEP 3: OVERLAP ELIMINATION
+python# SPACING RULES TO APPLY:
+
+# MINIMUM BUFFERS
+TIGHT_SPACING = 0.2   # Between closely related elements
+NORMAL_SPACING = 0.4  # Standard element separation
+LOOSE_SPACING = 0.8   # Between different sections
+SECTION_SPACING = 1.2 # Between major scene components
+
+# VERTICAL STACKING - No overlaps
+element1.to_edge(UP, buff=0.6)
+element2.next_to(element1, DOWN, buff=NORMAL_SPACING)
+element3.next_to(element2, DOWN, buff=NORMAL_SPACING)
+
+# HORIZONTAL ARRANGEMENT - Proper distribution  
+left_element.to_edge(LEFT, buff=1.0)
+center_element.move_to(ORIGIN)
+right_element.to_edge(RIGHT, buff=1.0)
+
+# LABEL POSITIONING - Clear of main objects
+label.next_to(object, UP + RIGHT, buff=0.3)  # Diagonal positioning
+label.next_to(object, DOWN + LEFT, buff=0.3)  # Alternative diagonal
+STEP 4: RESPONSIVE POSITIONING
+python# ADAPTIVE POSITIONING - Elements adjust to content
+# Replace fixed coordinates with relative positioning:
+
+# WRONG:
+text.move_to([2, 1, 0])  # Fixed coordinates can overlap
+
+# CORRECT:
+text.next_to(reference_object, RIGHT, buff=0.5)  # Relative positioning
+
+# WRONG: 
+equation.shift(UP * 3)  # May go off-screen
+
+# CORRECT:
+equation.to_edge(UP, buff=0.8)  # Screen-safe positioning
+MATHEMATICAL CONTENT ALIGNMENT:
+python# EQUATION SYSTEMS - Proper alignment
+system_title = Text("System of Equations")
+system_title.to_edge(UP, buff=0.5)
+
+eq1 = MathTex("2x + 3y = 7")
+eq1.next_to(system_title, DOWN, buff=0.8)
+eq1.to_edge(LEFT, buff=2.0)
+
+eq2 = MathTex("x - y = 1") 
+eq2.next_to(eq1, DOWN, buff=0.4)
+eq2.align_to(eq1, LEFT)  # Align left edges
+
+# COORDINATE SYSTEMS - Safe positioning
+axes.move_to(ORIGIN)
+axes.shift(DOWN * 0.5)  # Leave room for top labels
+
+# FUNCTION LABELS - Clear positioning
+func_label = MathTex("f(x) = x^2")
+func_label.next_to(axes, UP, buff=0.3)
+func_label.to_edge(LEFT, buff=1.0)
+CRITICAL FIXES TO IMPLEMENT:
+
+REPLACE ALL HARDCODED COORDINATES:
+
+python# WRONG:
+text.move_to([3, 2.5, 0])
+
+# FIXED:
+text.to_edge(UP, buff=0.8).shift(RIGHT * 2)
+
+ADD MISSING BUFFERS:
+
+python# WRONG:
+label.next_to(point)
+
+# FIXED: 
+label.next_to(point, UP, buff=0.3)
+
+CORRECT SCREEN VIOLATIONS:
+
+python# WRONG:
+title.move_to(UP * 4)  # Beyond screen
+
+# FIXED:
+title.to_edge(UP, buff=0.5)  # Safe positioning
+
+FIX OVERLAPPING GROUPS:
+
+python# WRONG:
+group1.move_to(ORIGIN)
+group2.move_to(ORIGIN)  # Overlap!
+
+# FIXED:
+group1.move_to(UP * 1.5)
+group2.move_to(DOWN * 1.5)
+TESTING VERIFICATION:
+After each fix, ensure:
+✅ All elements visible on screen
+✅ No overlapping text or objects
+✅ Consistent spacing throughout
+✅ Labels clearly readable
+✅ Mathematical expressions properly aligned
+✅ Coordinate systems within bounds
+✅ Scene transitions maintain positioning
+OUTPUT REQUIREMENTS:
+
+Return COMPLETE corrected Manim script
+{manim_code}
+--- CODE END ---
+"""
+def enforce_alignment_with_gemini(manim_code: str) -> str:
+    try:
+        prompt = build_alignment_prompt(manim_code)
+        response = model.generate_content(prompt)  # model is already configured
+        fixed_code = clean_manim_code(response.text or manim_code)
+        return fixed_code
+    except Exception as e:
+        print(f"[Alignment Gemini] Failed: {e}")
+        return manim_code  # Fallback: return original code
+
+# ====== FIX PROMPT BUILDER ======
+def build_fix_prompt(original_code: str, error_output: str, topic: str) -> str:
+    safe_original = original_code if original_code else "NO_ORIGINAL_CODE_PROVIDED"
+    safe_error = error_output if error_output else "NO_ERROR_OUTPUT_PROVIDED"
+    return f"""
+You are an EXPERT MANIM COMMUNITY ANIMATOR tasked with FIXING the following Manim Community Edition script so it runs without errors (v0.19.0 compatible).
+Topic: {topic}
+
+--- ORIGINAL CODE START ---
+{safe_original}
+--- ORIGINAL CODE END ---
+
+--- ERROR OUTPUT START ---
+{safe_error}
+--- ERROR OUTPUT END ---
+
+Instructions:
+1. Return ONLY the corrected Python code. No explanations, no markdown, no extra text.
+2. Ensure the scene class is named GeneratedScene and inherits from Scene.
+3. Use only verified Manim CE functions and patterns. Avoid deprecated or custom VMobject classes.
+4. Keep layouts inside safe boundaries: MAX_X=5.5, MAX_Y=2.8 and use move_to/next_to/to_edge patterns.
+5. Keep animations simple and robust (Create, Write, FadeIn, FadeOut, Transform).
+6. If you modify imports or add helper functions, include them at top of the script.
+7. End with a final wait (self.wait(1) or greater).
+8. Do not attempt to run manim or reference local file paths.
+"""
+
+# ====== AUDIO GENERATION ENDPOINT ======
+@app.post("/generate-audio")
+def generate_audio(request: AudioRequest):
+    try:
+        audio = elevenlabs_client.generate(
+            text=request.text,
+            voice="Rachel",
+            model="eleven_multilingual_v2"
+        )
+        audio_filename = f"audio_{uuid.uuid4().hex}.mp3"
+        audio_path = os.path.join("audio", audio_filename)
+        save(audio, audio_path)
+        audio_url = f"http://localhost:8000/audio/{audio_filename}"
+        return {"audioUrl": audio_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating audio: {e}")
+
+# ====== HYBRID VIDEO GENERATION ENDPOINT (with retry/fix loop) ======
 @app.post("/generate-video")
 def generate_video(request: PromptRequest):
     prompt = request.prompt.strip().lower()
     print(f"Prompt received: {prompt}")
+    gemini_prompt = build_gemini_prompt(prompt)
 
-    # 1. Hardcoded videos
-    if prompt in HARDCODED_VIDEOS:
-        print(f"Serving hardcoded video for: {prompt}")
-        return HARDCODED_VIDEOS[prompt]
-    k=build_gemini_prompt(prompt)
+    # 1. Get initial content from Gemini
+    try:
+        response = model.generate_content(gemini_prompt)
+        initial_text = response.text or ""
+    except ValueError as e:
+        print(f"Error getting initial response from Gemini: {e}")
+        # Return a user-friendly error message
+        raise HTTPException(status_code=500, detail="The AI model returned an empty or invalid response. This might be due to a safety filter. Please try a different prompt.")
 
-    # 2. Determine Gemini prompt
-    matched_topic = next((k for k in TOPIC_PROMPTS if k in prompt), None)
-    gemini_prompt = TOPIC_PROMPTS.get(matched_topic, build_gemini_prompt(prompt))
-
-    # 3. Get content from Gemini
-    response = model.generate_content(k)
-
-    # 4. Split code and transcript
-    parts = response.text.split("---EXPLANATION_STARTS_HERE---")
+    parts = initial_text.split("---EXPLANATION_STARTS_HERE---")
     manim_code = clean_manim_code(parts[0].strip())
+    manim_code= enforce_alignment_with_gemini(manim_code)
     transcript = parts[1].strip() if len(parts) > 1 else f"Step-by-step explanation for {prompt}"
 
-    # 5. Save Manim script to temp file
+    # Save initial script
     script_filename = f"video_{uuid.uuid4().hex}.py"
     with open(script_filename, "w") as f:
         f.write(manim_code)
+    print(f"Saved initial Manim code to {script_filename}")
 
-    print(f"Saved Manim code to {script_filename}")
+    max_retries = 5
+    attempt = 0
+    last_error_output = ""
+    final_video_path = None
 
-    # 6. Render video using Manim CLI
+    while attempt <= max_retries:
+        attempt += 1
+        print(f"Rendering attempt {attempt} for {script_filename}")
+        try:
+            # Use capture_output to obtain stderr/stdout for error reporting
+            proc = subprocess.run(
+                ["manim", "-pql", script_filename, "GeneratedScene"],
+                check=False,
+                capture_output=True,
+                text=True
+            )
+
+            if proc.returncode == 0:
+                # Success: locate video and move it
+                script_name_without_ext = os.path.splitext(script_filename)[0]
+                manim_output_dir = os.path.join("media", "videos", script_name_without_ext, "480p15")
+                manim_video_path = os.path.join(manim_output_dir, "GeneratedScene.mp4")
+
+                if os.path.exists(manim_video_path):
+                    final_video_name = f"{script_name_without_ext}.mp4"
+                    final_path = os.path.join("videos", final_video_name)
+                    # Ensure destination does not already exist
+                    if os.path.exists(final_path):
+                        os.remove(final_path)
+                    os.rename(manim_video_path, final_path)
+                    final_video_path = final_path
+
+                    # Clean up temp script
+                    try:
+                        os.remove(script_filename)
+                    except Exception:
+                        pass
+
+                    video_url = f"http://localhost:8000/videos/{final_video_name}"
+
+                    # Generate audio
+                    try:
+                        audio_response = generate_audio(AudioRequest(text=transcript))
+                        audio_url = audio_response["audioUrl"]
+                    except HTTPException as e:
+                        # If audio generation fails, we can decide to return the video anyway or fail
+                        print(f"Audio generation failed: {e.detail}")
+                        audio_url = None # Or some default/error indicator
+
+                    return {
+                        "videoUrl": video_url,
+                        "audioUrl": audio_url,
+                        "transcript": transcript,
+                        "title": f"Explaining {prompt}"
+                    }
+                else:
+                    last_error_output = f"Rendering succeeded but expected output not found at {manim_video_path}"
+                    print(last_error_output)
+                    # treat as failure and proceed to retry/fix
+            else:
+                # Capture stderr/stdout
+                last_error_output = f"Return code: {proc.returncode}\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+                print(f"Render failed with error:\n{last_error_output}")
+
+        except subprocess.CalledProcessError as e:
+            last_error_output = f"CalledProcessError: {e}"
+            print(last_error_output)
+
+        # If we've reached here, the attempt failed. If we have retries left, ask Gemini to fix.
+        if attempt <= max_retries:
+            print(f"Requesting Gemini to fix code (attempt {attempt})")
+            fix_prompt = build_fix_prompt(manim_code, last_error_output, prompt)
+            fix_response = model.generate_content(fix_prompt)
+            fixed_text = fix_response.text or ""
+            # Clean and ensure class name etc.
+            fixed_code = clean_manim_code(fixed_text.strip())
+            # Overwrite script file with fixed code
+            try:
+                with open(script_filename, "w") as f:
+                    f.write(fixed_code)
+                # Update manim_code variable for potential next fix iteration
+                manim_code = fixed_code
+                print(f"Saved fixed Manim code to {script_filename} (attempt {attempt})")
+            except Exception as e:
+                # If writing fails, abort
+                raise HTTPException(status_code=500, detail=f"Failed to write fixed script: {e}")
+            # loop will retry rendering with the new script
+        else:
+            # No retries left
+            break
+
+    # All attempts exhausted — cleanup temp script and return error
     try:
-        subprocess.run(
-            ["manim", "-pql", script_filename, "GeneratedScene"],
-            check=True
-        )
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Manim rendering failed: {e}")
+        if os.path.exists(script_filename):
+            os.remove(script_filename)
+    except Exception:
+        pass
 
-    # 7. Locate generated video
-    script_name_without_ext = os.path.splitext(script_filename)[0]
-    manim_output_dir = os.path.join("media", "videos", script_name_without_ext, "480p15")
-    manim_video_path = os.path.join(manim_output_dir, "GeneratedScene.mp4")
-
-    if not os.path.exists(manim_video_path):
-        raise HTTPException(status_code=404, detail=f"Video not found: {manim_video_path}")
-
-    # 8. Move video to public folder
-    final_video_name = f"{script_name_without_ext}.mp4"
-    final_path = os.path.join("videos", final_video_name)
-    os.rename(manim_video_path, final_path)
-
-    # 9. Delete temp script
-    os.remove(script_filename)
-
-    # 10. Return API response
-    video_url = f"http://localhost:8000/videos/{final_video_name}"
-    return {
-        "videoUrl": video_url,
-        "transcript": transcript,
-        "title": f"Explaining {prompt}"
-    }
+    # Return detailed error so frontend can show it or pass back to user
+    raise HTTPException(status_code=500, detail=f"Failed to generate video after {max_retries + 1} attempts. Last error: {last_error_output}")

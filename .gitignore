@@ -1,4 +1,22 @@
-backend/videos
-backend/media
-Frontend/public
-backend/__pycache__
+# Backend
+backend/videos/
+backend/media/
+backend/audio/
+backend/__pycache__/
+backend/man/
+backend/venv/
+backend/.env/
+.env
+
+# Frontend
+Frontend/public/
+Frontend/node_modules/
+Frontend/.next/
+Frontend/.bolt/
+
+# VS Code
+.vscode/
+
+# Other
+*.mp3
+

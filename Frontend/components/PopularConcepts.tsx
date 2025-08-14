@@ -14,7 +14,7 @@ const concepts = [
     title: 'Algebra',
     description: 'Linear equations, quadratic formulas, and polynomial operations',
     examples: [
-      'Solve quadratic equations using the quadratic formula',
+      'Solve quadratic equations',
       'Factor polynomials step by step',
       'Systems of linear equations'
     ]
